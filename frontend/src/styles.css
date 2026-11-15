@@ -453,3 +453,12 @@ a.chip { text-decoration: none; color: inherit; }
 .quietlink:not(:last-child)::after { content: "·"; margin: 0 0.45rem; color: var(--line-2); }
 .quietlink:hover, .quietlink:focus-visible { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 .quietlink[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
+
+/* analysis in progress: step, time left, bar and detail together */
+.runcard { display: grid; gap: 0.5rem; padding: 0.85rem 0.9rem; border: 1px solid var(--line-2); border-radius: var(--r-m); background: var(--night-2); }
+.runcard__top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.4rem 1rem; }
+.runcard__left { font-weight: 700; font-size: var(--t-m, 1rem); color: var(--ink); white-space: nowrap; }
+.runcard__bottom { display: flex; justify-content: space-between; gap: 1rem; font-size: var(--t-s); color: var(--muted); }
+.progress--run { height: 10px; }
+.progress--run i { transition: width 0.8s ease; }
+@media (prefers-reduced-motion: reduce) { .progress--run i { transition: none; } }

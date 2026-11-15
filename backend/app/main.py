@@ -304,12 +304,18 @@ def investigate(body: InvestigateIn):
     return {"job": job_id}
 
 
+STALL_S = 300  # no progress for this long: report the job as failed so it can be restarted
+
+
 @app.get("/api/jobs/{job_id}")
 def job(job_id: str):
     with _lock:
         j = JOBS.get(job_id)
         if j is None:
             raise HTTPException(404, "Unknown analysis. Start it again from the dashboard.")
+        last = j.get("eta_at") or j.get("started") or time.time()
+        if j["status"] == "running" and not j.get("remote") and time.time() - last > STALL_S:
+            j.update(status="error", message="The analysis stalled while reading NASA's files. Press Analyse again to retry.")
         j = dict(j)
     if j.get("remote") and j["status"] == "running":
         return _remote_poll(job_id, j)

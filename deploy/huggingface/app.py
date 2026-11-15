@@ -13,6 +13,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "backend"))
 os.environ.setdefault("FRONTEND_DIST", str(HERE / "frontend" / "dist"))
 os.environ.setdefault("CACHE_DIR", "/tmp/earthecho-cache")
+os.environ.setdefault("EST_FILE_S", "2.5")  # files arrive fast here: first time-left estimate
 if os.getenv("SPACE_HOST"):
     os.environ.setdefault("KEEP_AWAKE_URL", f"https://{os.environ['SPACE_HOST']}")
 Path(os.environ["CACHE_DIR"]).mkdir(parents=True, exist_ok=True)

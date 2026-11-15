@@ -23,6 +23,22 @@ function Steps({ progress }: { progress: number }) {
   );
 }
 
+/** Time left, counting down between server updates; small upward revisions are absorbed so it never jitters. */
+function TimeLeft({ eta, at }: { eta: number | null; at: number }) {
+  const [now, setNow] = useState(Date.now());
+  const shown = useRef<number | null>(null);
+  useEffect(() => { const h = window.setInterval(() => setNow(Date.now()), 1000); return () => window.clearInterval(h); }, []);
+  if (eta == null) return <span className="runcard__left">Estimating time…</span>;
+  let left = Math.max(0, eta - (now - at) / 1000);
+  if (shown.current != null && left > shown.current && left - shown.current < 25) left = shown.current;
+  shown.current = left;
+  const txt = left <= 8 ? "Almost done…"
+    : left < 55 ? `About ${Math.max(10, Math.round(left / 5) * 5)} s left`
+    : left < 90 ? "About 1 min left"
+    : `About ${Math.round(left / 60)} min left`;
+  return <span className="runcard__left num" aria-live="off">{txt}</span>;
+}
+
 export type Inv = any;
 
 // Official NISAR learning resources from the challenge's Resources tab, matched to each explanation.
@@ -151,13 +167,17 @@ export default function Investigate({ lat, lon, enabled, gaps, result, setResult
 
       {job && (
         <div style={{ display: "grid", gap: "0.9rem" }}>
-          <div style={{ display: "grid", gap: "0.4rem" }}>
-            <div className="progress" role="progressbar" aria-label="Analysis progress" aria-valuenow={Math.round(job.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+          <div className="runcard">
+            <div className="runcard__top">
+              <Steps progress={job.progress} />
+              <TimeLeft eta={job.eta} at={job.at} />
+            </div>
+            <div className="progress progress--run" role="progressbar" aria-label="Analysis progress" aria-valuenow={Math.round(job.progress * 100)} aria-valuemin={0} aria-valuemax={100}>
               <i style={{ width: `${Math.max(3, job.progress * 100)}%` }} />
             </div>
-            <div className="block__head">
-              <span className="block__note" aria-live="polite">{job.message}</span>
-              <Steps progress={job.progress} />
+            <div className="runcard__bottom">
+              <span aria-live="polite">{job.message}</span>
+              <span className="num">{Math.round(job.progress * 100)}%</span>
             </div>
             <span className="block__note">You can keep exploring the map and other tabs; the result appears here when it's ready.</span>
           </div>

@@ -185,7 +185,11 @@ def signed_url(url: str) -> str:
 
 
 def open_h5(url: str) -> h5py.File:
-    f = fsspec.open(signed_url(url), mode="rb", block_size=4 * 2**20, cache_type="blockcache").open()
+    import aiohttp
+    # A stalled connection to NASA's archive must fail (and be retried), not hang the analysis forever.
+    timeout = aiohttp.ClientTimeout(total=None, sock_connect=30, sock_read=60)
+    f = fsspec.open(signed_url(url), mode="rb", block_size=4 * 2**20, cache_type="blockcache",
+                    client_kwargs={"timeout": timeout}).open()
     return h5py.File(f, "r")
 
 
@@ -316,7 +320,7 @@ def read_gunw(url: str, lat: float, lon: float, half_km: float, with_los: bool =
 # h5py lets only one HDF5 call run at a time per process, so threads queue behind each
 # other. Separate worker processes read truly in parallel (measured: 8 files in 36 s
 # instead of ~190 s). The pool is created once and reused between analyses.
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 
 _pool = None
 _pool_lock = threading.Lock()
@@ -338,14 +342,57 @@ def pool() -> ProcessPoolExecutor:
         return _pool
 
 
-def read_parallel(kind: str, jobs: list[tuple], on_done=None) -> list:
-    """Run read_gcov/read_gunw jobs in worker processes; on_done(index) after each."""
+READ_LIMIT_S = float(os.getenv("READ_LIMIT_S", "180"))  # one file; normal reads take 2-30 s
+
+
+def _reset_pool():
+    """Abandon a pool that holds a stuck worker; new reads go to a fresh pool."""
+    global _pool
+    with _pool_lock:
+        _pool = None
+
+
+def read_parallel(kind: str, jobs: list[tuple], on_done=None, retries: int = 2) -> list:
+    """Run read_gcov/read_gunw jobs in worker processes; on_done(index) after each.
+    A file that fails or takes longer than READ_LIMIT_S is retried; after `retries` more tries its
+    slot stays None, so the caller can leave that date out instead of failing or hanging."""
     fn = _gcov_job if kind == "gcov" else _gunw_job
-    futs = {pool().submit(fn, j): i for i, j in enumerate(jobs)}
     out = [None] * len(jobs)
-    for f in as_completed(futs):
-        i = futs[f]
-        out[i] = f.result()
+    tries = [0] * len(jobs)
+    running = {}
+
+    def submit(i):
+        tries[i] += 1
+        running[pool().submit(fn, jobs[i])] = (i, time.monotonic())
+
+    def finish(i):
         if on_done:
             on_done(i)
+
+    for i in range(len(jobs)):
+        submit(i)
+    while running:
+        done, _ = wait(list(running), timeout=5, return_when=FIRST_COMPLETED)
+        for f in done:
+            i, _t0 = running.pop(f)
+            try:
+                out[i] = f.result()
+                finish(i)
+            except Exception as e:
+                print(f"read {kind} {i} failed (try {tries[i]}): {e}", flush=True)
+                if tries[i] <= retries:
+                    submit(i)
+                else:
+                    finish(i)
+        now = time.monotonic()
+        for f, (i, t0) in list(running.items()):
+            if now - t0 > READ_LIMIT_S:
+                running.pop(f)
+                f.cancel()
+                print(f"read {kind} {i} timed out after {READ_LIMIT_S:.0f} s (try {tries[i]})", flush=True)
+                _reset_pool()
+                if tries[i] <= retries:
+                    submit(i)
+                else:
+                    finish(i)
     return out

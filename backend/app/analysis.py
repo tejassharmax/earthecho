@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import base64
 import io
+import os
 import threading
 import json
 import re
@@ -207,7 +208,8 @@ def investigate(lat: float, lon: float, half_km: float = 3.0, progress=lambda p,
     # a second, opposite-direction track doubles the interferogram reading time
     n_geoms = 2 if any(t["direction"] != track["direction"] and t["min_coverage"] >= 0.95 and t["gunw_pairs"] >= 3
                        for t in cov["tracks"]) else 1
-    progress(0.05, f"Reading {n} radar images from track {track['track']}", n * 9 * (1 + 1.1 * n_geoms) + 60)
+    per_file = float(os.getenv("EST_FILE_S", "9"))  # seconds per file before any is measured (host-dependent)
+    progress(0.05, f"Reading {n} radar images from track {track['track']}", n * per_file * (1 + 1.1 * n_geoms) + 60)
     prods = [None] * n
     done = [0]
 
@@ -220,7 +222,7 @@ def investigate(lat: float, lon: float, half_km: float = 3.0, progress=lambda p,
     f_lc = ctx_pool.submit(context.landcover, grid0)
     f_rain = ctx_pool.submit(context.rainfall, round(lat, 3), round(lon, 3))
     f_osm = ctx_pool.submit(context.osm, round(b0[1] - 0.01, 4), round(b0[0] - 0.01, 4), round(b0[3] + 0.01, 4), round(b0[2] + 0.01, 4))
-    t_est = n * 9 * (1 + 1.1 * n_geoms) + 60  # whole-run estimate from measured runs (8 worker processes)
+    t_est = n * per_file * (1 + 1.1 * n_geoms) + 60  # whole-run estimate until reads are measured
 
     def loaded(i):
         done[0] += 1
@@ -228,10 +230,18 @@ def investigate(lat: float, lon: float, half_km: float = 3.0, progress=lambda p,
         # measured on real runs: reading the interferograms takes about 1.1x the image phase
         measured = per * (n - done[0]) + per * n * 1.1 * n_geoms + 10
         modelled = max(30.0, t_est - (_t.time() - t_start))
-        eta = modelled if done[0] < n / 2 else measured
+        eta = modelled if done[0] < 2 else measured  # trust measured speed once two files are in
         progress(0.05 + 0.55 * done[0] / n, f"Read image {done[0]} of {n} ({gcov_items[i]['date']})", eta)
 
     prods = nisar.read_parallel("gcov", [(it["url"], lat, lon, half_km, pols) for it in gcov_items], loaded)
+    missing = [k for k, pr in enumerate(prods) if pr is None]
+    if missing:
+        excluded += [{"date": gcov_items[k]["date"], "reason": "NASA's archive didn't deliver this file in time; left out"}
+                     for k in missing]
+        gcov_items = [it for k, it in enumerate(gcov_items) if k not in missing]
+        prods = [pr for pr in prods if pr is not None]
+    if len(prods) < 3:
+        raise RuntimeError("NASA's archive isn't delivering NISAR files right now. Please try again in a few minutes.")
     spacing = max(20.0, max(p["spacing"] for p in prods))
     grid = context.make_grid(lat, lon, half_km, spacing, prods[0]["epsg"])
     stacks = {ch: np.stack([_regrid(p, grid).get(ch, np.full(grid["shape"], np.nan)) for p in prods]) for ch in pols}
@@ -350,7 +360,6 @@ def _motion(lat, lon, half_km, track, d0, d1, ter, grid, on_pair=None):
     done = [0]
     lock = threading.Lock()
 
-    first_url = pairs[0][2]["url"]
 
     def read_done(_i):
         with lock:
@@ -358,7 +367,11 @@ def _motion(lat, lon, half_km, track, d0, d1, ter, grid, on_pair=None):
             if on_pair:
                 on_pair(done[0], len(pairs))
 
-    reads = nisar.read_parallel("gunw", [(p[2]["url"], lat, lon, half_km, p[2]["url"] == first_url) for p in pairs], read_done)
+    reads = nisar.read_parallel("gunw", [(p[2]["url"], lat, lon, half_km, True) for p in pairs], read_done)
+    kept = [(p, r) for p, r in zip(pairs, reads) if r is not None]  # leave out interferograms that never arrived
+    if not kept:
+        return {"error": "NASA's archive didn't deliver the interferograms in time."}
+    pairs, reads = [k[0] for k in kept], [k[1] for k in kept]
     shape = reads[0]["phase"].shape
     cum = np.zeros(shape, np.float32)
     valid_days = np.zeros(shape, np.float32)
