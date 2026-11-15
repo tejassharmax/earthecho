@@ -17,5 +17,10 @@ USER_AGENT = "EarthEcho/0.1 (NASA Space Apps 2026 open-source project)"
 MAX_DATES = int(os.getenv("MAX_DATES", "12"))
 
 
+# Another EarthEcho server that runs new analyses for this one (e.g. a small free host forwarding to the
+# Hugging Face Space). Showcase results, the map and context data are still served locally.
+ANALYSIS_BACKEND = os.getenv("ANALYSIS_BACKEND", "").strip().rstrip("/")
+
+
 def has_earthdata() -> bool:
     return bool(EARTHDATA_TOKEN or (EARTHDATA_USERNAME and EARTHDATA_PASSWORD))

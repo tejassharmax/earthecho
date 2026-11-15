@@ -1,5 +1,5 @@
-# Render Blueprint: one free Docker web service. No Earthdata token is set, so the 9 showcase
-# places come from backend/demo; add EARTHDATA_TOKEN as a secret in the Render dashboard to analyse new places.
+# Render Blueprint: one free Docker web service. Showcase places come from backend/demo; analyses of new
+# places are forwarded to the Hugging Face Space (ANALYSIS_BACKEND), so no Earthdata token is needed here.
 services:
   - type: web
     name: earthecho
@@ -8,3 +8,7 @@ services:
     dockerfilePath: ./Dockerfile
     healthCheckPath: /api/health
     autoDeploy: true
+    envVars:
+      # New-place analyses run on the Hugging Face Space (16 CPUs); this free instance forwards them
+      - key: ANALYSIS_BACKEND
+        value: https://ttejuuu-earthecho.hf.space

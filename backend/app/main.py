@@ -60,7 +60,8 @@ def _round(lat: float, lon: float):
 
 @app.get("/api/health")
 def health():
-    return {"ok": True, "deep_analysis": config.has_earthdata(), "max_dates": config.MAX_DATES}
+    return {"ok": True, "deep_analysis": config.has_earthdata() or bool(config.ANALYSIS_BACKEND),
+            "max_dates": config.MAX_DATES}
 
 
 @app.get("/api/geocode")
@@ -124,6 +125,16 @@ def layer(key: str, name: str):
     for base in (config.CACHE_DIR / "layers", config.ROOT / "demo" / "layers"):
         f = base / key / name
         if f.exists():
+            return FileResponse(f, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
+    if config.ANALYSIS_BACKEND:  # made by the analysis server: fetch once, keep a copy
+        try:
+            r = _remote_session().get(f"{config.ANALYSIS_BACKEND}/api/layers/{key}/{name}", timeout=60)
+        except Exception:
+            r = None
+        if r is not None and r.status_code == 200:
+            f = config.CACHE_DIR / "layers" / key / name
+            f.parent.mkdir(parents=True, exist_ok=True)
+            f.write_bytes(r.content)
             return FileResponse(f, media_type="image/png", headers={"Cache-Control": "public, max-age=86400"})
     raise HTTPException(404, "Layer not found; run the analysis again")
 
@@ -278,6 +289,12 @@ def investigate(body: InvestigateIn):
             JOBS[job_id] = {"status": "done", "progress": 1.0, "message": "Done (cached)",
                             "result": json.loads(cached.read_text())}
         return {"job": job_id}
+    if not config.has_earthdata() and config.ANALYSIS_BACKEND:
+        remote = _remote_start(body)
+        with _lock:
+            JOBS[job_id] = {"status": "running", "progress": 0.0, "message": "Queued", "started": time.time(),
+                            "remote": remote, "body": body.model_dump(), "key": key}
+        return {"job": job_id}
     if not config.has_earthdata():
         raise HTTPException(503, "This public demo runs the full change analysis ahead of time for its nine showcase "
                                  "places. Everything else on the dashboard works live for this place.")
@@ -293,7 +310,59 @@ def job(job_id: str):
         j = JOBS.get(job_id)
         if j is None:
             raise HTTPException(404, "Unknown analysis. Start it again from the dashboard.")
-        return dict(j)
+        j = dict(j)
+    if j.get("remote") and j["status"] == "running":
+        return _remote_poll(job_id, j)
+    j.pop("remote", None); j.pop("body", None); j.pop("key", None)
+    return j
+
+
+# ---- forwarding new analyses to ANALYSIS_BACKEND ----
+_remote = None
+
+
+def _remote_session():
+    global _remote
+    if _remote is None:
+        import requests
+        _remote = requests.Session()
+        _remote.headers["User-Agent"] = config.USER_AGENT
+    return _remote
+
+
+def _remote_start(body: "InvestigateIn") -> str:
+    try:
+        r = _remote_session().post(f"{config.ANALYSIS_BACKEND}/api/investigate", json=body.model_dump(), timeout=90)
+    except Exception:
+        raise HTTPException(503, "The analysis server is waking up. Try again in a minute.")
+    if r.status_code != 200:
+        try:
+            detail = r.json().get("detail")
+        except Exception:
+            detail = None
+        raise HTTPException(503, detail or "The analysis server is busy. Try again in a minute.")
+    return r.json()["job"]
+
+
+def _remote_poll(job_id: str, j: dict) -> dict:
+    try:
+        r = _remote_session().get(f"{config.ANALYSIS_BACKEND}/api/jobs/{j['remote']}", timeout=90)
+        if r.status_code == 404:  # the analysis server restarted: start again
+            remote = _remote_start(InvestigateIn(**j["body"]))
+            with _lock:
+                JOBS[job_id]["remote"] = remote
+            return {"status": "running", "progress": 0.0, "message": "Resuming the analysis"}
+        r.raise_for_status()
+        rj = r.json()
+    except HTTPException:
+        raise
+    except Exception:
+        return {"status": "running", "progress": j.get("progress", 0.0), "message": "Waiting for the analysis server…"}
+    with _lock:
+        JOBS[job_id].update({k: rj[k] for k in ("status", "progress", "message", "result") if k in rj})
+    if rj.get("status") == "done" and rj.get("result"):
+        (config.CACHE_DIR / f"inv_{j['key']}.json").write_text(json.dumps(rj["result"], allow_nan=False))
+    return {k: v for k, v in rj.items() if k not in ("remote", "body", "key")}
 
 
 # ---- NASA GIBS tile proxy: retries out of the browser's sight, limits load, caches on disk ----
