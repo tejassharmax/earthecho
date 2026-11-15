@@ -1,0 +1,11 @@
+# Never ship secrets, local environments or caches in the image
+**/.env
+**/.venv
+**/node_modules
+**/__pycache__
+**/.pytest_cache
+backend/cache
+frontend/dist
+*.zip
+brag-output
+data

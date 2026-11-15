@@ -1,0 +1,10 @@
+# Render Blueprint: one free Docker web service. No Earthdata token is set, so the 9 showcase
+# places come from backend/demo; add EARTHDATA_TOKEN as a secret in the Render dashboard to analyse new places.
+services:
+  - type: web
+    name: earthecho
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/health
+    autoDeploy: true

@@ -1,0 +1,16 @@
+fastapi>=0.115
+uvicorn[standard]>=0.30
+numpy>=2.0
+scipy>=1.14
+pillow>=10
+shapely>=2.0
+pyproj>=3.7
+rasterio>=1.4
+asf_search>=8
+h5py>=3.11
+fsspec>=2024.6
+aiohttp>=3.9
+requests>=2.31
+python-dotenv>=1.0
+pytest>=8
+httpx>=0.27

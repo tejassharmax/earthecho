@@ -1,0 +1,93 @@
+{
+  "method": "Gamma likelihood-ratio change-point test with Conradsen (2016) omnibus gate; HH and HV combined with a Satterthwaite correction for their measured correlation",
+  "alpha": 0.01,
+  "images": 11,
+  "pixels_per_case": 6400,
+  "note": "Simulated speckle from correlated complex-Gaussian looks (HH-HV coherence 0 to 0.9), not real NISAR labels.",
+  "cases": [
+    {
+      "looks": 9,
+      "step_db": 0,
+      "false_alarm_rate": 0.0053125
+    },
+    {
+      "looks": 9,
+      "step_db": 1,
+      "detection_rate": 0.02484375,
+      "correct_date_rate": 0.3333333333333333
+    },
+    {
+      "looks": 9,
+      "step_db": 2,
+      "detection_rate": 0.31734375,
+      "correct_date_rate": 0.6868537666174298
+    },
+    {
+      "looks": 9,
+      "step_db": 3,
+      "detection_rate": 0.89640625,
+      "correct_date_rate": 0.862994596478996
+    },
+    {
+      "looks": 9,
+      "step_db": 6,
+      "detection_rate": 1.0,
+      "correct_date_rate": 0.98921875
+    },
+    {
+      "looks": 30,
+      "step_db": 0,
+      "false_alarm_rate": 0.00421875
+    },
+    {
+      "looks": 30,
+      "step_db": 1,
+      "detection_rate": 0.23671875,
+      "correct_date_rate": 0.6653465346534654
+    },
+    {
+      "looks": 30,
+      "step_db": 2,
+      "detection_rate": 0.9946875,
+      "correct_date_rate": 0.9310398994659127
+    },
+    {
+      "looks": 30,
+      "step_db": 3,
+      "detection_rate": 1.0,
+      "correct_date_rate": 0.988125
+    },
+    {
+      "looks": 30,
+      "step_db": 6,
+      "detection_rate": 1.0,
+      "correct_date_rate": 0.99328125
+    }
+  ],
+  "correlation_check": [
+    {
+      "hh_hv_coherence": 0.0,
+      "false_alarms_naive": 0.00609375,
+      "false_alarms_corrected": 0.00375,
+      "measured_r": 0.0
+    },
+    {
+      "hh_hv_coherence": 0.5,
+      "false_alarms_naive": 0.00765625,
+      "false_alarms_corrected": 0.00546875,
+      "measured_r": 0.071
+    },
+    {
+      "hh_hv_coherence": 0.7,
+      "false_alarms_naive": 0.015625,
+      "false_alarms_corrected": 0.00625,
+      "measured_r": 0.26
+    },
+    {
+      "hh_hv_coherence": 0.9,
+      "false_alarms_naive": 0.0284375,
+      "false_alarms_corrected": 0.0053125,
+      "measured_r": 0.675
+    }
+  ]
+}
