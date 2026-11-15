@@ -205,7 +205,7 @@ export default function Story() {
                     <p className="block__note">
                       {s.status === "building" ? "The server is analysing NISAR's data for this place now; this chapter fills in by itself in a few minutes."
                         : s.status === "queued" ? "Queued for analysis on the server; this chapter fills in by itself once it's done."
-                        : s.status === "waiting" ? "This place will be analysed when the server has a NASA Earthdata token."
+                        : s.status === "waiting" ? "This chapter fills in once NISAR's data for this place has been analysed."
                         : s.status.startsWith("error") ? "This place's analysis failed on the server; it will retry on the next refresh."
                         : "Loading the analysis…"}
                     </p>

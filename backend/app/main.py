@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import threading
 import time
 import traceback
@@ -94,8 +95,11 @@ def site(lat: float, lon: float, half_km: float = Query(3.0, ge=1, le=6)):
 @app.get("/api/osm")
 def osm(lat: float, lon: float, half_km: float = Query(3.0, ge=1, le=6)):
     lat, lon = _round(lat, lon)
-    out = _cached("osm", _key(lat, lon, half_km), lambda: analysis.osm_profile(lat, lon, half_km), 24 * 3600)
-    return out
+    key = _key(lat, lon, half_km)
+    shipped = config.ROOT / "demo" / "osm" / f"{key}.json"  # showcase places never depend on Overpass
+    if shipped.exists():
+        return json.loads(shipped.read_text())
+    return _cached("osm", key, lambda: analysis.osm_profile(lat, lon, half_km), 7 * 24 * 3600)
 
 
 _LAYER_RE = __import__("re").compile(r"^[0-9a-f]{16}$")
@@ -181,10 +185,25 @@ def _remeasure_accuracy():
         traceback.print_exc()
 
 
+def _keep_awake(url: str):
+    """Free hosts put an idle service to sleep after ~15 min; a light request through the public URL every
+    10 min keeps the first visitor from waiting for a cold start."""
+    import requests
+    while True:
+        time.sleep(600)
+        try:
+            requests.get(f"{url.rstrip('/')}/api/health", timeout=30)
+        except Exception:
+            pass
+
+
 @app.on_event("startup")
 def _start_background():
     threading.Thread(target=_maintain_showcase, daemon=True).start()
     threading.Thread(target=_remeasure_accuracy, daemon=True).start()
+    public = os.getenv("RENDER_EXTERNAL_URL") or os.getenv("KEEP_AWAKE_URL")
+    if public and os.getenv("KEEP_AWAKE", "1") != "0":
+        threading.Thread(target=_keep_awake, args=(public,), daemon=True).start()
 
 
 @app.get("/api/showcase")
@@ -249,8 +268,8 @@ def investigate(body: InvestigateIn):
                             "result": json.loads(cached.read_text())}
         return {"job": job_id}
     if not config.has_earthdata():
-        raise HTTPException(503, "Deep NISAR analysis is not enabled on this server: it needs an Earthdata token "
-                                 "in backend/.env. Everything else on the dashboard still works.")
+        raise HTTPException(503, "This public demo runs the full change analysis ahead of time for its nine showcase "
+                                 "places. Everything else on the dashboard works live for this place.")
     with _lock:
         JOBS[job_id] = {"status": "running", "progress": 0.0, "message": "Queued", "started": time.time()}
     threading.Thread(target=_run, args=(job_id, lat, lon, body.half_km, key), daemon=True).start()

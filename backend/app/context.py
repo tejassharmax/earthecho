@@ -128,11 +128,27 @@ def rain_before(rain: dict, day: str, ndays: int = 30) -> float | None:
     return round(sum(vals), 1) if vals else None
 
 
-OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]
+OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private.coffee/api/interpreter",
+            "https://overpass.kumi.systems/api/interpreter", "https://maps.mail.ru/osm/tools/overpass/api/interpreter"]
+_osm_ok: dict = {}  # successful answers only; a failure is retried on the next request
 
 
-@lru_cache(maxsize=128)
 def osm(s: float, w: float, n: float, e: float) -> dict:
+    key = (s, w, n, e)
+    if key in _osm_ok:
+        return _osm_ok[key]
+    for attempt in range(2):  # public Overpass servers are often busy for a few seconds at a time
+        out = _osm_fetch(s, w, n, e)
+        if not out.get("error"):
+            if len(_osm_ok) > 256:
+                _osm_ok.clear()
+            _osm_ok[key] = out
+            return out
+        time.sleep(2 + 3 * attempt)
+    return out
+
+
+def _osm_fetch(s: float, w: float, n: float, e: float) -> dict:
     bb = f"{s:.5f},{w:.5f},{n:.5f},{e:.5f}"
     q = (f"[out:json][timeout:40];("
          f'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|track)$"]({bb});'
@@ -142,7 +158,7 @@ def osm(s: float, w: float, n: float, e: float) -> dict:
     last = None
     for url in OVERPASS:
         try:
-            r = requests.post(url, data={"data": q}, headers={"User-Agent": config.USER_AGENT}, timeout=60)
+            r = requests.post(url, data={"data": q}, headers={"User-Agent": config.USER_AGENT}, timeout=(8, 35))
             r.raise_for_status()
             els = r.json().get("elements", [])
             roads, rivers, water = [], [], []
@@ -214,12 +230,16 @@ def geocode(q: str) -> list[dict]:
              "type": x.get("type")} for x in res]
 
 
-@lru_cache(maxsize=1024)
 def reverse(lat: float, lon: float) -> dict:
     try:
-        x = _nominatim("reverse", {"lat": lat, "lon": lon, "zoom": 12})
-    except Exception:
+        return _reverse(lat, lon)
+    except Exception:  # not cached, so the name appears once Nominatim answers again
         return {"name": None}
+
+
+@lru_cache(maxsize=1024)
+def _reverse(lat: float, lon: float) -> dict:
+    x = _nominatim("reverse", {"lat": lat, "lon": lon, "zoom": 12})
     a = x.get("address", {})
     short = a.get("city") or a.get("town") or a.get("village") or a.get("county") or a.get("state_district") or a.get("state")
     return {"name": short or x.get("display_name"), "full": x.get("display_name"),

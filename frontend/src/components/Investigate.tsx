@@ -1,4 +1,5 @@
 import { useContext, useEffect, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../lib/api";
 import { LangContext, useT } from "../lib/i18n";
 import { play, seriesNotes } from "../lib/sound";
@@ -13,11 +14,11 @@ const STEPS: [number, string][] = [
 function Steps({ progress }: { progress: number }) {
   const cur = Math.max(0, STEPS.findIndex(([end]) => progress < end));
   return (
-    <span className="steps" aria-label={`Step ${cur + 1} of ${STEPS.length}: ${STEPS[cur][1]}`}>
+    <span className="pstep" aria-label={`Step ${cur + 1} of ${STEPS.length}: ${STEPS[cur][1]}`}>
       {STEPS.map(([, label], i) => (
         <i key={label} className={i < cur ? "done" : i === cur ? "now" : ""} title={label} />
       ))}
-      <span className="steps__label">Step {cur + 1} of {STEPS.length} · {STEPS[cur][1]}</span>
+      <span className="pstep__label">Step {cur + 1} of {STEPS.length} · {STEPS[cur][1]}</span>
     </span>
   );
 }
@@ -55,6 +56,10 @@ export default function Investigate({ lat, lon, enabled, gaps, result, setResult
   const timer = useRef<number>();
 
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  const [showcase, setShowcase] = useState<{ id: string; short: string; lat: number; lon: number }[]>([]);
+  useEffect(() => {
+    if (enabled === false) api.showcase().then(setShowcase).catch(() => {});
+  }, [enabled]);
   useEffect(() => { setJob(null); setErr(null); window.clearTimeout(timer.current); }, [lat, lon]);
 
   const start = async () => {
@@ -120,10 +125,21 @@ export default function Investigate({ lat, lon, enabled, gaps, result, setResult
       </div>
 
       {enabled === false && !result && (
-        <p className="notice">
-          Deep analysis reads NISAR's source files, which needs a NASA Earthdata token on the EarthEcho server.
-          This server doesn't have one yet, so this section is off. The map, timeline, terrain, rainfall and roads all work without it.
-        </p>
+        <div className="notice" style={{ display: "grid", gap: "0.6rem" }}>
+          <p style={{ margin: 0 }}>
+            The full change analysis reads every NISAR source image of this 6 × 6 km square, about 11 files of several
+            hundred megabytes each, so this public demo runs it ahead of time. Nine places, from Himalayan slopes to
+            Kīlauea's lava, open with their complete results instantly:
+          </p>
+          {showcase.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "0.4rem" }}>
+              {showcase.map(sc => (
+                <Link key={sc.id} className="chip" to={`/dashboard?lat=${sc.lat.toFixed(5)}&lon=${sc.lon.toFixed(5)}&analyse=1`}>{sc.short}</Link>
+              ))}
+            </div>
+          )}
+          <p className="block__note" style={{ margin: 0 }}>Everything else for this place works live: the radar swipe, every NISAR pass, terrain, land cover, rainfall, roads and rivers.</p>
+        </div>
       )}
 
       {!result && !job && enabled !== false && (

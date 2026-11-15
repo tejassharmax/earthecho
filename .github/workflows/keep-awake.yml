@@ -1,0 +1,13 @@
+# Backup for the server's own keep-awake ping: if the free instance ever goes to sleep, this wakes it
+# within ~10 minutes so visitors never wait for a cold start.
+name: keep-awake
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 https://earthecho.onrender.com/api/health

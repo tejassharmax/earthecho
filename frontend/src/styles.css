@@ -431,9 +431,11 @@ a:hover { text-decoration-thickness: 2px; }
 .chapter__foot { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
 
 /* analysis step indicator (replaces the countdown) */
-.steps { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--t-s); white-space: nowrap; }
-.steps > i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; opacity: 0.22; transition: opacity 0.6s ease, transform 0.6s ease; }
-.steps > i.done { opacity: 0.6; }
-.steps > i.now { opacity: 1; transform: scale(1.25); }
-.steps__label { margin-left: 0.35rem; font-weight: 600; }
-@media (prefers-reduced-motion: reduce) { .steps > i { transition: none; } }
+.pstep { display: inline-flex; align-items: center; gap: 0.35rem; font-size: var(--t-s); white-space: nowrap; }
+.pstep > i { width: 0.5rem; height: 0.5rem; border-radius: 50%; background: currentColor; opacity: 0.22; transition: opacity 0.6s ease, transform 0.6s ease; }
+.pstep > i.done { opacity: 0.6; }
+.pstep > i.now { opacity: 1; transform: scale(1.25); }
+.pstep__label { margin-left: 0.35rem; font-weight: 600; }
+@media (prefers-reduced-motion: reduce) { .pstep > i { transition: none; } }
+
+a.chip { text-decoration: none; color: inherit; }
