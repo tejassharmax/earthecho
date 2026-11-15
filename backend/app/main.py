@@ -371,7 +371,9 @@ def gibs_tile(path: str):
 
 # ---- serve the built frontend (single deployment) ----
 if config.FRONTEND_DIST.exists():
-    app.mount("/assets", StaticFiles(directory=config.FRONTEND_DIST / "assets"), name="assets")
+    for _assets in ("ee-assets", "assets"):
+        if (config.FRONTEND_DIST / _assets).is_dir():
+            app.mount(f"/{_assets}", StaticFiles(directory=config.FRONTEND_DIST / _assets), name=_assets)
 
     @app.get("/{path:path}")
     def spa(path: str):

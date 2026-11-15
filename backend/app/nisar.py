@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import threading
 import time
@@ -333,7 +334,7 @@ def pool() -> ProcessPoolExecutor:
     global _pool
     with _pool_lock:
         if _pool is None:
-            _pool = ProcessPoolExecutor(max_workers=8)
+            _pool = ProcessPoolExecutor(max_workers=int(os.getenv("READ_PROCESSES", "8")))
         return _pool
 
 

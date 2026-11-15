@@ -144,7 +144,7 @@ export default function Investigate({ lat, lon, enabled, gaps, result, setResult
 
       {!result && !job && enabled !== false && (
         <div style={{ display: "grid", gap: "0.6rem" }}>
-          <p className="muted">Reads every NISAR image of the 6 × 6 km square around this place, tests each 20 m pixel for change and explains what it finds. The first time for a new place takes about 3 to 4 minutes; places analysed before open instantly.</p>
+          <p className="muted">Reads every NISAR image of the 6 × 6 km square around this place, tests each 20 m pixel for change and explains what it finds. The first time for a new place takes about 1 to 3 minutes; places analysed before open instantly.</p>
           <div><button className="btn btn--primary" onClick={start} disabled={enabled === null}>{t("analyse")}</button></div>
         </div>
       )}

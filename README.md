@@ -14,6 +14,8 @@ short_description: NASA-ISRO NISAR radar change explorer for any place on Earth
 **Ask the NASA–ISRO NISAR radar what changed at any place on Earth, and why.**
 NASA Space Apps Challenge 2026: *Dancing with the SARs*.
 
+**Live:** https://ttejuuu-earthecho.hf.space (full analysis of any place, usually 1 to 3 minutes)
+
 No accounts and no login pages. Open the site, allow your location (or search or click the map), and every feature runs on that place.
 
 ## What it does
@@ -88,6 +90,8 @@ Tests: `cd backend && .venv/Scripts/python -m pytest -q -s`
 ## Deploy (one public link)
 
 The `Dockerfile` builds the frontend and serves it from FastAPI on port 7860. That works for a Hugging Face Docker Space, Render or Railway. Set `EARTHDATA_TOKEN` as a secret in the host's settings, never in the repo.
+
+The live site runs on a Hugging Face Gradio Space (`deploy/huggingface/`): Gradio starts the web server and EarthEcho's FastAPI routes and built React app are added to it. Build the Space folder with `deploy/huggingface/build.sh <dir>` after `npm run build`, then upload it. The analysis runs on the Space's CPUs.
 
 ## Data
 

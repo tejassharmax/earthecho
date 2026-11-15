@@ -10,4 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - run: curl -fsS --retry 3 --retry-delay 20 --max-time 90 https://earthecho.onrender.com/api/health
+      - name: Wake both copies of the site
+        run: |
+          for url in https://ttejuuu-earthecho.hf.space https://earthecho.onrender.com; do
+            curl -fsS --retry 3 --retry-delay 20 --max-time 90 "$url/api/health" || echo "no answer from $url"
+          done
