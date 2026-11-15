@@ -5,6 +5,7 @@ import { AcquisitionTimeline, RainBars, fmt } from "../components/Charts";
 import Investigate from "../components/Investigate";
 import RadarSwipe, { type GeoOverlay, type ImageOverlay } from "../components/RadarSwipe";
 import { api, type Coverage } from "../lib/api";
+import { fmtCoords, parseCoords } from "../lib/coords";
 import { nisarTiles } from "../lib/gibs";
 import { LangContext, useT } from "../lib/i18n";
 import { play, rhythmNotes } from "../lib/sound";
@@ -103,7 +104,8 @@ export default function Dashboard() {
   const [layers, setLayers] = useState<Layers>({ motion: false, motion2d: false, events: true, terrain: false, landcover: false, osm: true, swaths: false });
   const [layersOpen, setLayersOpen] = useState(false);
   const [q, setQ] = useState("");
-  const [results, setResults] = useState<{ name: string; lat: number; lon: number }[]>([]);
+  const [results, setResults] = useState<{ name: string; lat: number; lon: number; coords?: boolean }[]>([]);
+  const [searchState, setSearchState] = useState<"idle" | "searching" | "none" | "error">("idle");
   const [tour, setTour] = useState<number | null>(null);
   const [rhythm, setRhythm] = useState(false);
   const [live, setLive] = useState("");
@@ -157,10 +159,23 @@ export default function Dashboard() {
   }, [lat, lon]);
 
   useEffect(() => {
-    if (q.trim().length < 3) { setResults([]); return; }
-    const h = window.setTimeout(() => api.geocode(q.trim()).then(setResults).catch(() => setResults([])), 450);
-    return () => window.clearTimeout(h);
+    const text = q.trim();
+    const c = parseCoords(text);
+    if (c) {  // typed coordinates: no lookup needed
+      setResults([{ name: `Go to ${fmtCoords(c.lat, c.lon)}`, lat: c.lat, lon: c.lon, coords: true }]);
+      setSearchState("idle");
+      return;
+    }
+    if (text.length < 2) { setResults([]); setSearchState("idle"); return; }
+    setSearchState("searching");
+    let alive = true;
+    const h = window.setTimeout(() => api.geocode(text)
+      .then(r => { if (!alive) return; setResults(r); setSearchState(r.length ? "idle" : "none"); })
+      .catch(() => { if (!alive) return; setResults([]); setSearchState("error"); }), 350);
+    return () => { alive = false; window.clearTimeout(h); };
   }, [q]);
+
+  const pick = (r: { lat: number; lon: number }) => { setQ(""); setResults([]); setSearchState("idle"); go(r.lat, r.lon); };
 
   useEffect(() => { api.showcase().then(setShowcase).catch(() => {}); }, []);
   // once EarthEcho's own 20 m layers exist, show them (sharper and calibrated, vs. NASA's daily mosaic)
@@ -271,12 +286,34 @@ export default function Dashboard() {
         <Brand />
         <div className="search">
           <label className="sr-only" htmlFor="place-search">{t("searchPlace")}</label>
-          <input id="place-search" type="search" placeholder={t("searchPlace")} value={q} onChange={e => setQ(e.target.value)} autoComplete="off" />
-          {results.length > 0 && (
-            <ul className="search__results">
-              {results.map(r => (
-                <li key={`${r.lat},${r.lon}`}><button onClick={() => { setQ(""); setResults([]); go(r.lat, r.lon); }}>{r.name}</button></li>
+          <input id="place-search" type="search" placeholder={t("searchPlace")} value={q} autoComplete="off"
+                 aria-describedby="search-hint" aria-controls="search-results" aria-expanded={results.length > 0}
+                 onChange={e => setQ(e.target.value)}
+                 onKeyDown={e => {
+                   if (e.key === "Enter" && results[0]) { e.preventDefault(); pick(results[0]); }
+                   if (e.key === "Escape") { setQ(""); setResults([]); setSearchState("idle"); }
+                   if (e.key === "ArrowDown" && results.length) { e.preventDefault(); (document.querySelector("#search-results button") as HTMLButtonElement | null)?.focus(); }
+                 }} />
+          <span id="search-hint" className="sr-only">Type a place name, or coordinates such as 18.52, 73.86. Press Enter for the first match.</span>
+          {(results.length > 0 || (q.trim().length >= 2 && searchState !== "idle")) && (
+            <ul className="search__results" id="search-results">
+              {results.map((r, i) => (
+                <li key={`${r.lat},${r.lon},${i}`}>
+                  <button className={r.coords ? "search__coords" : undefined} onClick={() => pick(r)}
+                          onKeyDown={e => {
+                            const items = [...document.querySelectorAll<HTMLButtonElement>("#search-results button")];
+                            if (e.key === "ArrowDown") { e.preventDefault(); items[i + 1]?.focus(); }
+                            if (e.key === "ArrowUp") { e.preventDefault(); (items[i - 1] ?? document.getElementById("place-search"))?.focus(); }
+                            if (e.key === "Escape") { setQ(""); setResults([]); document.getElementById("place-search")?.focus(); }
+                          }}>
+                    {r.name}
+                    {!r.coords && <span className="search__ll num">{fmtCoords(r.lat, r.lon)}</span>}
+                  </button>
+                </li>
               ))}
+              {results.length === 0 && searchState === "searching" && <li className="search__state" aria-live="polite">Searching…</li>}
+              {results.length === 0 && searchState === "none" && <li className="search__state" aria-live="polite">No places found. Try another spelling, or type coordinates like 18.52, 73.86.</li>}
+              {results.length === 0 && searchState === "error" && <li className="search__state" aria-live="polite">Place search isn't answering right now. Coordinates like 18.52, 73.86 still work.</li>}
             </ul>
           )}
         </div>
@@ -376,10 +413,10 @@ export default function Dashboard() {
             {cov && cov.tracks.length === 0 && <p className="notice">NISAR hasn't published calibrated images of this spot yet. Open ocean and some polar regions are imaged less often. Try a place on land.</p>}
             {covErr && <p className="notice error">Couldn't reach NASA's archive: {covErr}</p>}
             {showcase.length > 0 && (
-              <nav className="showcase" aria-label="Pre-analysed showcase places">
-                <span className="block__note">Instant results:</span>
+              <nav className="showcase showcase--quiet" aria-label="Ready-made example places">
+                <span className="showcase__label">Ready examples</span>
                 {showcase.map(sc => (
-                  <button key={sc.id} className="chip" aria-pressed={inv?.lat === sc.lat && inv?.lon === sc.lon}
+                  <button key={sc.id} className="quietlink" aria-pressed={inv?.lat === sc.lat && inv?.lon === sc.lon}
                           onClick={() => { setTab("changes"); setParams({ lat: sc.lat.toFixed(5), lon: sc.lon.toFixed(5), analyse: "1" }); }}>
                     {sc.short}
                   </button>

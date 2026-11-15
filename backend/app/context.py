@@ -226,11 +226,53 @@ def _nominatim(path: str, params: dict):
     return r.json()
 
 
+def _photon_name(pr: dict) -> str:
+    parts = [pr.get("name"), pr.get("city") if pr.get("city") != pr.get("name") else None,
+             pr.get("county"), pr.get("state"), pr.get("country")]
+    out = []
+    for x in parts:
+        if x and x not in out:
+            out.append(x)
+    return ", ".join(out)
+
+
+def _geo_nominatim(q: str) -> list[dict]:
+    return [{"name": x.get("display_name"), "lat": float(x["lat"]), "lon": float(x["lon"]), "type": x.get("type")}
+            for x in _nominatim("search", {"q": q, "limit": 6})]
+
+
+def _geo_photon(q: str) -> list[dict]:
+    r = requests.get("https://photon.komoot.io/api/", params={"q": q, "limit": 6},
+                     headers={"User-Agent": config.USER_AGENT}, timeout=15)
+    r.raise_for_status()
+    return [{"name": _photon_name(f["properties"]), "lat": f["geometry"]["coordinates"][1],
+             "lon": f["geometry"]["coordinates"][0], "type": f["properties"].get("type")}
+            for f in r.json().get("features", []) if f.get("geometry")]
+
+
+def _geo_openmeteo(q: str) -> list[dict]:
+    r = requests.get("https://geocoding-api.open-meteo.com/v1/search", params={"name": q, "count": 6, "format": "json"},
+                     headers={"User-Agent": config.USER_AGENT}, timeout=15)
+    r.raise_for_status()
+    return [{"name": ", ".join(x for x in (g.get("name"), g.get("admin1"), g.get("country")) if x),
+             "lat": g["latitude"], "lon": g["longitude"], "type": g.get("feature_code")} for g in r.json().get("results") or []]
+
+
 @lru_cache(maxsize=512)
 def geocode(q: str) -> list[dict]:
-    res = _nominatim("search", {"q": q, "limit": 6})
-    return [{"name": x.get("display_name"), "lat": float(x["lat"]), "lon": float(x["lon"]),
-             "type": x.get("type")} for x in res]
+    """Place search. Nominatim first; shared hosting IPs often get rate-limited there, so fall back to
+    Photon (also OpenStreetMap) and then Open-Meteo's GeoNames search. Raises only if all three fail."""
+    last = None
+    for fn in (_geo_nominatim, _geo_photon, _geo_openmeteo):
+        try:
+            out = fn(q)
+            if out or fn is _geo_openmeteo:
+                return out
+        except Exception as e:
+            last = e
+    if last:
+        raise last
+    return []
 
 
 def reverse(lat: float, lon: float) -> dict:
@@ -242,6 +284,22 @@ def reverse(lat: float, lon: float) -> dict:
 
 @lru_cache(maxsize=1024)
 def _reverse(lat: float, lon: float) -> dict:
+    try:
+        return _reverse_nominatim(lat, lon)
+    except Exception:
+        r = requests.get("https://photon.komoot.io/reverse", params={"lat": lat, "lon": lon},
+                         headers={"User-Agent": config.USER_AGENT}, timeout=15)
+        r.raise_for_status()
+        f = (r.json().get("features") or [None])[0]
+        if not f:
+            return {"name": None}
+        pr = f["properties"]
+        short = pr.get("city") or pr.get("town") or pr.get("village") or pr.get("county") or pr.get("state") or pr.get("name")
+        return {"name": short, "full": _photon_name(pr), "country": pr.get("country"),
+                "country_code": (pr.get("countrycode") or "").lower() or None}
+
+
+def _reverse_nominatim(lat: float, lon: float) -> dict:
     x = _nominatim("reverse", {"lat": lat, "lon": lon, "zoom": 12})
     a = x.get("address", {})
     short = a.get("city") or a.get("town") or a.get("village") or a.get("county") or a.get("state_district") or a.get("state")

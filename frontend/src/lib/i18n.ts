@@ -6,7 +6,7 @@ export type Lang = "en" | "hi";
 const S: Record<string, { en: string; hi: string }> = {
   openDashboard: { en: "Open the dashboard", hi: "डैशबोर्ड खोलें" },
   useMyLocation: { en: "Use my location", hi: "मेरी लोकेशन इस्तेमाल करें" },
-  searchPlace: { en: "Search any place on Earth", hi: "पृथ्वी पर कोई भी जगह खोजें" },
+  searchPlace: { en: "Search a place, or type lat, long", hi: "जगह खोजें, या अक्षांश, देशांतर लिखें" },
   simple: { en: "Simple", hi: "सरल" },
   expert: { en: "Expert", hi: "विशेषज्ञ" },
   passes: { en: "NISAR passes", hi: "NISAR के गुज़रने" },

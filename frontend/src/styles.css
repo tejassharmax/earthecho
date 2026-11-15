@@ -439,3 +439,17 @@ a:hover { text-decoration-thickness: 2px; }
 @media (prefers-reduced-motion: reduce) { .pstep > i { transition: none; } }
 
 a.chip { text-decoration: none; color: inherit; }
+
+/* search: coordinates and states */
+.search__results button { display: grid; gap: 0.1rem; }
+.search__ll { font-size: var(--t-xs, 0.75rem); color: var(--muted); }
+.search__coords { font-weight: 600; }
+.search__state { padding: 0.5rem 0.6rem; color: var(--muted); font-size: var(--t-s); }
+
+/* ready-made examples: present but quiet */
+.showcase--quiet { gap: 0.15rem 0; font-size: var(--t-s); color: var(--muted); }
+.showcase__label { margin-right: 0.5rem; opacity: 0.8; }
+.quietlink { background: none; border: 0; padding: 0.1rem 0; color: var(--muted); cursor: pointer; font: inherit; }
+.quietlink:not(:last-child)::after { content: "·"; margin: 0 0.45rem; color: var(--line-2); }
+.quietlink:hover, .quietlink:focus-visible { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.quietlink[aria-pressed="true"] { color: var(--ink); font-weight: 600; }
