@@ -510,7 +510,7 @@ export default function Dashboard() {
                     {osm.nearest_river && <> Nearest river or stream: {osm.nearest_river.name ?? osm.nearest_river.kind}, {Math.round(osm.nearest_river.distance_m)} m away.</>}
                   </p>
                 )}
-                {osm?.error && <p className="block__note">Roads and rivers didn't load this time. Reload the page to try again.</p>}
+                {osm?.error && <p className="block__note">OpenStreetMap's public map servers are busy right now, so roads and rivers didn't load. Reload in a minute to try again.</p>}
                 {expert && site?.terrain && <p className="block__note">Sources: {site.terrain.source}; {site.landcover.source}; {site.rain?.source}; {osm?.source}.</p>}
               </div>
             </section>

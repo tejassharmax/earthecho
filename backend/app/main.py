@@ -96,10 +96,21 @@ def site(lat: float, lon: float, half_km: float = Query(3.0, ge=1, le=6)):
 def osm(lat: float, lon: float, half_km: float = Query(3.0, ge=1, le=6)):
     lat, lon = _round(lat, lon)
     key = _key(lat, lon, half_km)
-    shipped = config.ROOT / "demo" / "osm" / f"{key}.json"  # showcase places never depend on Overpass
-    if shipped.exists():
-        return json.loads(shipped.read_text())
+    shipped = _shipped_osm(lat, lon) if half_km == 3.0 else None  # showcase places never depend on Overpass
+    if shipped:
+        return shipped
     return _cached("osm", key, lambda: analysis.osm_profile(lat, lon, half_km), 7 * 24 * 3600)
+
+
+def _shipped_osm(lat: float, lon: float):
+    """Roads and rivers saved with the app for the showcase places (within ~500 m of one)."""
+    idx = config.ROOT / "demo" / "osm" / "index.json"
+    if not idx.exists():
+        return None
+    for site in json.loads(idx.read_text()):
+        if abs(site["lat"] - lat) <= 0.006 and abs(site["lon"] - lon) <= 0.006:
+            return json.loads((idx.parent / site["file"]).read_text())
+    return None
 
 
 _LAYER_RE = __import__("re").compile(r"^[0-9a-f]{16}$")

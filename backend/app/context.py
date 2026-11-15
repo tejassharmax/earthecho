@@ -133,32 +133,35 @@ OVERPASS = ["https://overpass-api.de/api/interpreter", "https://overpass.private
 _osm_ok: dict = {}  # successful answers only; a failure is retried on the next request
 
 
-def osm(s: float, w: float, n: float, e: float) -> dict:
+def osm(s: float, w: float, n: float, e: float, budget_s: float = 45.0) -> dict:
     key = (s, w, n, e)
     if key in _osm_ok:
         return _osm_ok[key]
-    for attempt in range(2):  # public Overpass servers are often busy for a few seconds at a time
-        out = _osm_fetch(s, w, n, e)
-        if not out.get("error"):
-            if len(_osm_ok) > 256:
-                _osm_ok.clear()
-            _osm_ok[key] = out
-            return out
-        time.sleep(2 + 3 * attempt)
+    out = _osm_fetch(s, w, n, e, time.monotonic() + budget_s)
+    if not out.get("error"):
+        if len(_osm_ok) > 256:
+            _osm_ok.clear()
+        _osm_ok[key] = out
     return out
 
 
-def _osm_fetch(s: float, w: float, n: float, e: float) -> dict:
+def _osm_fetch(s: float, w: float, n: float, e: float, deadline: float) -> dict:
+    """Try the mirrors in turn (two rounds) until one answers or the time budget runs out."""
     bb = f"{s:.5f},{w:.5f},{n:.5f},{e:.5f}"
-    q = (f"[out:json][timeout:40];("
+    q = (f"[out:json][timeout:25];("
          f'way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential|track)$"]({bb});'
          f'way["waterway"~"^(river|stream|canal)$"]({bb});'
          f'way["natural"="water"]({bb});'
          f");out geom;way[\"building\"]({bb});out count;")
     last = None
-    for url in OVERPASS:
+    for url in OVERPASS * 2:
+        left = deadline - time.monotonic()
+        if left < 4:
+            last = last or TimeoutError("map data servers are busy")
+            break
         try:
-            r = requests.post(url, data={"data": q}, headers={"User-Agent": config.USER_AGENT}, timeout=(8, 35))
+            r = requests.post(url, data={"data": q}, headers={"User-Agent": config.USER_AGENT},
+                              timeout=(min(6, left), max(3, min(30, left))))
             r.raise_for_status()
             els = r.json().get("elements", [])
             roads, rivers, water = [], [], []
