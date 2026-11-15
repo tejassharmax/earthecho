@@ -233,7 +233,12 @@ def investigate(lat: float, lon: float, half_km: float = 3.0, progress=lambda p,
         eta = modelled if done[0] < 2 else measured  # trust measured speed once two files are in
         progress(0.05 + 0.55 * done[0] / n, f"Read image {done[0]} of {n} ({gcov_items[i]['date']})", eta)
 
-    prods = nisar.read_parallel("gcov", [(it["url"], lat, lon, half_km, pols) for it in gcov_items], loaded)
+    def slow(i):
+        per = (_t.time() - t_read) / max(1, done[0])
+        eta = max(30.0, t_est - (_t.time() - t_start)) if done[0] < 2 else per * n * 1.1 * n_geoms + 30
+        progress(0.05 + 0.55 * done[0] / n, f"One file from NASA's archive is slow ({gcov_items[i]['date']}); asking for it again", eta)
+
+    prods = nisar.read_parallel("gcov", [(it["url"], lat, lon, half_km, pols) for it in gcov_items], loaded, on_slow=slow)
     missing = [k for k, pr in enumerate(prods) if pr is None]
     if missing:
         excluded += [{"date": gcov_items[k]["date"], "reason": "NASA's archive didn't deliver this file in time; left out"}

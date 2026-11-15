@@ -85,6 +85,7 @@ export default function Investigate({ lat, lon, enabled, gaps, result, setResult
     try {
       let id = (await api.investigate(lat, lon)).job;
       let failures = 0;
+      let retried = false;
       const poll = async () => {
         try {
           let j: any;
@@ -114,7 +115,17 @@ export default function Investigate({ lat, lon, enabled, gaps, result, setResult
             if (first) onFocusEvent?.(first, j.result);
             return;
           }
-          if (j.status === "error") { setJob(null); setErr(j.message); return; }
+          if (j.status === "error") {
+            // One automatic retry: most failures are a passing hiccup at NASA's archive or the analysis server.
+            if (!retried) {
+              retried = true;
+              id = (await api.investigate(lat, lon)).job;
+              setJob(prev => prev && { ...prev, progress: 0, message: "A file from NASA's archive didn't come through; trying again automatically", eta: null, at: Date.now() });
+              timer.current = window.setTimeout(poll, 2000);
+              return;
+            }
+            setJob(null); setErr(j.message); return;
+          }
           setJob(prev => ({ progress: j.progress, message: j.message, started: prev?.started ?? started,
             eta: j.eta_s ?? (prev?.eta != null ? Math.max(0, prev.eta - (Date.now() - prev.at) / 1000) : null),
             at: Date.now() }));

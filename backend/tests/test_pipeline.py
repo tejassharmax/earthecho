@@ -62,7 +62,7 @@ def patched(monkeypatch):
     monkeypatch.setattr(nisar, "read_gcov", fake_gcov)
     monkeypatch.setattr(nisar, "read_gunw", fake_gunw)
 
-    def in_process(kind, jobs, on_done=None):  # worker processes can't see monkeypatched readers
+    def in_process(kind, jobs, on_done=None, **_):  # worker processes can't see monkeypatched readers
         out = []
         for i, j in enumerate(jobs):
             out.append(fake_gcov(*j) if kind == "gcov" else fake_gunw(*j))
@@ -94,3 +94,58 @@ def test_result_is_strict_json(patched):
     import json
     res = analysis.investigate(LAT, LON, HALF)
     json.dumps(res, allow_nan=False)  # raises on NaN/ndarray: browsers reject both
+
+
+def test_read_parallel_survives_failures_and_hangs(monkeypatch):
+    """A file that errors is retried; a file that never arrives is left out (None), never a hang."""
+    import concurrent.futures as cf
+    from app import nisar
+
+    calls = {}
+
+    def fake(job):
+        k = job[0]
+        calls[k] = calls.get(k, 0) + 1
+        if k == "flaky" and calls[k] == 1:
+            raise OSError("connection reset")
+        if k == "dead":
+            raise OSError("never arrives")
+        return k
+
+    pool = cf.ThreadPoolExecutor(4)
+    monkeypatch.setattr(nisar, "pool", lambda: pool)
+    monkeypatch.setattr(nisar, "_gcov_job", fake)
+    done = []
+    out = nisar.read_parallel("gcov", [("ok",), ("flaky",), ("dead",)], done.append, retries=2)
+    assert out == ["ok", "flaky", None]
+    assert sorted(done) == [0, 1, 2]
+    assert calls["dead"] == 3
+
+
+def test_read_parallel_asks_again_for_a_straggler(monkeypatch):
+    """One stalled file gets a second request; the first copy to arrive wins, so nobody waits for the stall."""
+    import concurrent.futures as cf
+    import threading
+    import time as t
+    from app import nisar
+
+    first = threading.Event()
+
+    def fake(job):
+        if job[0] == "slow" and not first.is_set():
+            first.set()
+            t.sleep(5)  # stalls far longer than its siblings
+            return "late"
+        t.sleep(0.05)
+        return job[0]
+
+    pool = cf.ThreadPoolExecutor(8)
+    monkeypatch.setattr(nisar, "pool", lambda: pool)
+    monkeypatch.setattr(nisar, "_gcov_job", fake)
+    monkeypatch.setattr(nisar, "HEDGE_MIN_S", 0.3)
+    slow = []
+    t0 = t.monotonic()
+    out = nisar.read_parallel("gcov", [("a",), ("b",), ("slow",), ("c",)], on_slow=slow.append)
+    assert out == ["a", "b", "slow", "c"]  # the fresh copy, not the stalled one
+    assert slow == [2]
+    assert t.monotonic() - t0 < 4

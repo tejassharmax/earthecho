@@ -342,7 +342,8 @@ def pool() -> ProcessPoolExecutor:
         return _pool
 
 
-READ_LIMIT_S = float(os.getenv("READ_LIMIT_S", "180"))  # one file; normal reads take 2-30 s
+READ_LIMIT_S = float(os.getenv("READ_LIMIT_S", "120"))  # hard limit for one try of one file
+HEDGE_MIN_S = 15.0  # never ask for a second copy of a file sooner than this
 
 
 def _reset_pool():
@@ -352,47 +353,78 @@ def _reset_pool():
         _pool = None
 
 
-def read_parallel(kind: str, jobs: list[tuple], on_done=None, retries: int = 2) -> list:
-    """Run read_gcov/read_gunw jobs in worker processes; on_done(index) after each.
-    A file that fails or takes longer than READ_LIMIT_S is retried; after `retries` more tries its
-    slot stays None, so the caller can leave that date out instead of failing or hanging."""
+def read_parallel(kind: str, jobs: list[tuple], on_done=None, retries: int = 2, on_slow=None) -> list:
+    """Run read_gcov/read_gunw jobs in worker processes; on_done(index) once per file.
+
+    Tail-latency guard: NASA's archive occasionally stalls on one file. When a file takes much longer
+    than the others (4x the median so far, at least 15 s), a second request for it is started and
+    whichever finishes first is used. A try that fails or exceeds READ_LIMIT_S is retried; after
+    `retries` extra tries the file's slot stays None so the caller can leave that date out."""
     fn = _gcov_job if kind == "gcov" else _gunw_job
     out = [None] * len(jobs)
     tries = [0] * len(jobs)
-    running = {}
+    settled = [False] * len(jobs)
+    hedged = [False] * len(jobs)
+    durations: list[float] = []
+    running: dict = {}
 
     def submit(i):
         tries[i] += 1
         running[pool().submit(fn, jobs[i])] = (i, time.monotonic())
 
-    def finish(i):
+    def live(i):
+        return sum(1 for (k, _t) in running.values() if k == i)
+
+    def settle(i, value=None):
+        if settled[i]:
+            return
+        settled[i] = True
+        out[i] = value
         if on_done:
             on_done(i)
+
+    def give_up_or_retry(i):
+        if settled[i] or live(i):
+            return
+        if tries[i] <= retries:
+            submit(i)
+        else:
+            settle(i, None)
 
     for i in range(len(jobs)):
         submit(i)
     while running:
-        done, _ = wait(list(running), timeout=5, return_when=FIRST_COMPLETED)
+        done, _ = wait(list(running), timeout=2, return_when=FIRST_COMPLETED)
         for f in done:
-            i, _t0 = running.pop(f)
+            i, t0 = running.pop(f)
+            if settled[i]:
+                continue
             try:
-                out[i] = f.result()
-                finish(i)
+                value = f.result()
+                durations.append(time.monotonic() - t0)
+                settle(i, value)
             except Exception as e:
                 print(f"read {kind} {i} failed (try {tries[i]}): {e}", flush=True)
-                if tries[i] <= retries:
-                    submit(i)
-                else:
-                    finish(i)
+                give_up_or_retry(i)
         now = time.monotonic()
+        med = sorted(durations)[len(durations) // 2] if durations else None
+        hedge_after = max(HEDGE_MIN_S, 4 * med) if med else 3 * HEDGE_MIN_S
         for f, (i, t0) in list(running.items()):
-            if now - t0 > READ_LIMIT_S:
+            if settled[i]:
                 running.pop(f)
                 f.cancel()
-                print(f"read {kind} {i} timed out after {READ_LIMIT_S:.0f} s (try {tries[i]})", flush=True)
+                continue
+            age = now - t0
+            if age > READ_LIMIT_S:
+                running.pop(f)
+                f.cancel()
+                print(f"read {kind} {i} gave up after {age:.0f} s (try {tries[i]})", flush=True)
                 _reset_pool()
-                if tries[i] <= retries:
-                    submit(i)
-                else:
-                    finish(i)
+                give_up_or_retry(i)
+            elif age > hedge_after and not hedged[i] and live(i) == 1 and tries[i] <= retries:
+                hedged[i] = True
+                print(f"read {kind} {i} slow ({age:.0f} s, median {med or 0:.0f} s): asking again", flush=True)
+                submit(i)
+                if on_slow:
+                    on_slow(i)
     return out
